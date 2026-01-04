@@ -42,7 +42,6 @@ let electricityPrice = 3500
 document.addEventListener('DOMContentLoaded', () => {
     initDateTime();
     initNavigation();
-    initCharts();
     initModals();
     loadSettings();
     loadPaymentData();
@@ -164,11 +163,11 @@ function initNavigation() {
 function updateDashboard() {
     document.getElementById('room1Voltage').textContent = Voltage1 + " V";
     document.getElementById('room1Energy').textContent = energy1 + ' kWh';
-    document.getElementById('room1Cost').textContent = electricityPrice * energy1 + " VNĐ";
+    document.getElementById('room1Cost').textContent = parseInt(electricityPrice * energy1) + " VNĐ";
 
     document.getElementById('room2Voltage').textContent = Voltage2 + " V";
     document.getElementById('room2Energy').textContent = energy2 + " kWh";
-    document.getElementById('room2Cost').textContent = electricityPrice * energy2 + " VNĐ";
+    document.getElementById('room2Cost').textContent = parseInt(electricityPrice * energy2) + " VNĐ";
 
     updateAlerts();
 }
@@ -210,16 +209,112 @@ function updateAlerts() {
 }
 
 // ==================== BIỂU ĐỒ ====================
+function getLast4MonthsData(dataSnapshot, unitPrice = 2000) {
+    if (!dataSnapshot || typeof dataSnapshot !== 'object') {
+        return { months: [], energy: [], cost: [] };
+    }
+
+    // Bước 1: Lấy giá trị cuối ngày của mỗi ngày
+    const dayEndValues = [];
+    for (const [dayKey, hoursObj] of Object.entries(dataSnapshot)) {
+        if (!hoursObj || typeof hoursObj !== 'object') continue;
+
+        const hourValues = Object.values(hoursObj)
+            .filter(v => typeof v === 'number')
+            .map(Number);
+
+        if (hourValues.length === 0) continue;
+
+        const lastValue = Math.max(...hourValues);
+        dayEndValues.push({ dayKey, value: lastValue });
+    }
+
+    if (dayEndValues.length === 0) {
+        return { months: [], energy: [], cost: [] };
+    }
+
+    // Bước 2: Nhóm theo tháng và lấy giá trị cuối tháng
+    const monthMap = {};
+    dayEndValues.forEach(({ dayKey, value }) => {
+        const monthKey = dayKey.substring(0, 7); // "2025-12"
+        if (!monthMap[monthKey] || value > monthMap[monthKey].value) {
+            monthMap[monthKey] = { value };
+        }
+    });
+
+    // Bước 3: Sắp xếp tháng từ cũ đến mới
+    const sortedMonths = Object.keys(monthMap)
+        .sort()
+        .map(monthKey => ({
+            monthKey,
+            value: monthMap[monthKey].value,
+            label: `${monthKey.substring(5, 7)}/${monthKey.substring(0, 4)}` // "12/2025"
+        }));
+
+    if (sortedMonths.length < 2) {
+        return { months: [], energy: [], cost: [] };
+    }
+
+    // Bước 4: Tính tiêu thụ mỗi tháng
+    const result = [];
+    for (let i = 1; i < sortedMonths.length; i++) {
+        const prev = sortedMonths[i - 1];
+        const curr = sortedMonths[i];
+        const usage = curr.value - prev.value;
+        if (usage >= 0) {
+            result.push({
+                label: prev.label,
+                energy: parseFloat(usage.toFixed(2)),
+                cost: parseFloat((usage * unitPrice).toFixed(0)) // tiền điện làm tròn nguyên
+            });
+        }
+    }
+
+    // Bước 5: Lấy 4 tháng gần nhất
+    const last4 = result.slice(-4);
+
+    // Bù thiếu nếu chưa đủ 4 tháng
+    while (last4.length < 4) {
+        const prevLabel = last4.length > 0 ? last4[0].label : "--/----";
+        last4.unshift({ label: prevLabel, energy: 0, cost: 0 });
+    }
+
+    // Bước 6: Tách thành 3 mảng riêng
+    const months = last4.map(item => item.label);
+    const energy = last4.map(item => item.energy);
+    const cost = last4.map(item => item.cost);
+
+    return { months, energy, cost };
+}
+
+let months = [];
+let chartData1 = {
+    energy: [],
+    cost: []
+};
+let chartData2 = {
+    energy: [],
+    cost: []
+};
+let loadedCount = 0; // Đếm xem đã load xong bao nhiêu phòng
+
 function initCharts() {
-    const months = ['Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11'];
+    // Chỉ vẽ chart khi cả hai phòng đều đã load dữ liệu
+    if (loadedCount < 2) return;
+
+    // Hủy chart cũ nếu đã tồn tại (tránh lỗi overlap)
+    if (window.powerChartInstance) window.powerChartInstance.destroy();
+    if (window.costChartInstance) window.costChartInstance.destroy();
+
+    // Biểu đồ điện năng (bar)
     const powerCtx = document.getElementById('powerChart').getContext('2d');
-    new Chart(powerCtx, {
+    window.powerChartInstance = new Chart(powerCtx, {
         type: 'bar',
         data: {
             labels: months,
             datasets: [
-                { label: 'Phòng 101', data: [130, 135, 145, 168], backgroundColor: 'rgba(44,62,80,0.85)', borderRadius: 8 },
-                { label: 'Phòng 102', data: [110, 128, 138, 155], backgroundColor: 'rgba(120,144,156,0.85)', borderRadius: 8 }
+                { label: 'Phòng B00', data: chartData1.energy, backgroundColor: 'rgba(44,62,80,0.85)', borderRadius: 8 },
+                { label: 'Phòng B01', data: chartData2.energy, backgroundColor: 'rgba(120,144,156,0.85)', borderRadius: 8 }
             ]
         },
         options: {
@@ -229,23 +324,59 @@ function initCharts() {
         }
     });
 
+    // Biểu đồ chi phí (line)
     const costCtx = document.getElementById('costChart').getContext('2d');
-    new Chart(costCtx, {
+    window.costChartInstance = new Chart(costCtx, {
         type: 'line',
         data: {
             labels: months,
             datasets: [
-                { label: 'Phòng 101', data: [410000, 472500, 507500, 588000], borderColor: '#2c3e50', backgroundColor: 'rgba(44,62,80,0.1)', tension: 0.4 },
-                { label: 'Phòng 102', data: [385000, 448000, 483000, 542500], borderColor: '#78909c', backgroundColor: 'rgba(120,144,156,0.1)', tension: 0.4 }
+                { label: 'Phòng B00', data: chartData1.cost, borderColor: '#2c3e50', backgroundColor: 'rgba(44,62,80,0.1)', tension: 0.4 },
+                { label: 'Phòng B01', data: chartData2.cost, borderColor: '#78909c', backgroundColor: 'rgba(120,144,156,0.1)', tension: 0.4 }
             ]
         },
         options: {
             responsive: true,
             plugins: { legend: { position: 'top' } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Chi phí (VNĐ)' }, ticks: { callback: v => v.toLocaleString('vi-VN') } } }
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Chi phí (VNĐ)' },
+                    ticks: { callback: v => v.toLocaleString('vi-VN') }
+                }
+            }
         }
     });
 }
+
+// Listener cho phòng B00
+onValue(ref(db, "C000001/Data"), snapshot => {
+    if (!snapshot.exists()) return;
+    const data = snapshot.val();
+    const result = getLast4MonthsData(data, electricityPrice);
+    
+    months = result.months || [];           // Lưu months từ phòng B00 (hoặc chọn nguồn chuẩn)
+    chartData1.energy = result.energy || [];
+    chartData1.cost = result.cost || [];
+    
+    loadedCount = Math.max(loadedCount, 1); // Đảm bảo ít nhất là 1
+    initCharts();
+});
+
+// Listener cho phòng B01
+onValue(ref(db, "C000002/Data"), snapshot => {
+    if (!snapshot.exists()) return;
+    const data = snapshot.val();
+    const result = getLast4MonthsData(data, electricityPrice);
+    
+    // QUAN TRỌNG: Không ghi đè months ở đây!
+    // months đã được lấy từ phòng B00 → giữ nguyên để đồng bộ
+    chartData2.energy = result.energy || [];
+    chartData2.cost = result.cost || [];
+    
+    loadedCount = 2; // Đánh dấu phòng thứ 2 đã load xong
+    initCharts();
+});
 
 // ==================== MODALS ====================
 function initModals() {
