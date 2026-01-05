@@ -125,26 +125,55 @@
             </div>
         </div>
 
-        <!-- Report Section -->
-        <div id="reportSection" class="content-section">
-            <h2 class="section-title">📈 Báo cáo thống kê</h2>
-            
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <h3>📊 Điện năng tiêu thụ 4 tháng gần nhất</h3>
-                    </div>
-                    <canvas id="powerChart"></canvas>
-                </div>
+    <!-- Report Section -->
+    <div id="reportSection" class="content-section">
+        <h2 class="section-title">📈 Báo cáo thống kê 8 tháng gần nhất</h2>
 
-                <div class="chart-card">
-                    <div class="chart-header">
-                        <h3>💵 Chi phí điện 4 tháng gần nhất</h3>
-                    </div>
-                    <canvas id="costChart"></canvas>
+        <!-- Switch Tách / Gộp -->
+        <div class="chart-mode-switch" style="text-align: center; margin: 20px 0;">
+            <label class="switch-label">
+                <input type="checkbox" id="separateChartsToggle">
+                <span class="slider round"></span>
+            </label>
+            <span style="margin-left: 10px; font-weight: 500; color: #333;">
+                Tách riêng từng phòng
+            </span>
+        </div>
+
+        <!-- Luôn grid 2 cột -->
+        <div class="charts-grid-2cols">
+            <!-- Hàng 1: Điện năng -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3 id="powerTitle">Điện năng tiêu thụ</h3>
                 </div>
+                <canvas id="powerChart"></canvas>
+            </div>
+
+            <!-- Hàng 1: Chi phí -->
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3 id="costTitle">Chi phí điện</h3>
+                </div>
+                <canvas id="costChart"></canvas>
+            </div>
+
+            <!-- Hàng 2: Chỉ dùng khi tách (B01) - ẩn khi gộp -->
+            <div class="chart-card" id="powerChartB01Container" style="display: none;">
+                <div class="chart-header">
+                    <h3>Phòng B01 - Điện năng</h3>
+                </div>
+                <canvas id="powerChartB01"></canvas>
+            </div>
+
+            <div class="chart-card" id="costChartB01Container" style="display: none;">
+                <div class="chart-header">
+                    <h3>Phòng B01 - Chi phí</h3>
+                </div>
+                <canvas id="costChartB01"></canvas>
             </div>
         </div>
+    </div>
 
         <!-- Payment Section -->
         <div id="paymentSection" class="content-section">

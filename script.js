@@ -209,12 +209,11 @@ function updateAlerts() {
 }
 
 // ==================== BIỂU ĐỒ ====================
-function getLast4MonthsData(dataSnapshot, unitPrice = 2000) {
+function getLast8MonthsData(dataSnapshot, unitPrice = 2000) {
     if (!dataSnapshot || typeof dataSnapshot !== 'object') {
         return { months: [], energy: [], cost: [] };
     }
 
-    // Bước 1: Lấy giá trị cuối ngày của mỗi ngày
     const dayEndValues = [];
     for (const [dayKey, hoursObj] of Object.entries(dataSnapshot)) {
         if (!hoursObj || typeof hoursObj !== 'object') continue;
@@ -229,11 +228,8 @@ function getLast4MonthsData(dataSnapshot, unitPrice = 2000) {
         dayEndValues.push({ dayKey, value: lastValue });
     }
 
-    if (dayEndValues.length === 0) {
-        return { months: [], energy: [], cost: [] };
-    }
+    if (dayEndValues.length === 0) return { months: [], energy: [], cost: [] };
 
-    // Bước 2: Nhóm theo tháng và lấy giá trị cuối tháng
     const monthMap = {};
     dayEndValues.forEach(({ dayKey, value }) => {
         const monthKey = dayKey.substring(0, 7); // "2025-12"
@@ -242,20 +238,16 @@ function getLast4MonthsData(dataSnapshot, unitPrice = 2000) {
         }
     });
 
-    // Bước 3: Sắp xếp tháng từ cũ đến mới
     const sortedMonths = Object.keys(monthMap)
         .sort()
         .map(monthKey => ({
             monthKey,
             value: monthMap[monthKey].value,
-            label: `${monthKey.substring(5, 7)}/${monthKey.substring(0, 4)}` // "12/2025"
+            label: `${monthKey.substring(5, 7)}/${monthKey.substring(0, 4)}`
         }));
 
-    if (sortedMonths.length < 2) {
-        return { months: [], energy: [], cost: [] };
-    }
+    if (sortedMonths.length < 2) return { months: [], energy: [], cost: [] };
 
-    // Bước 4: Tính tiêu thụ mỗi tháng
     const result = [];
     for (let i = 1; i < sortedMonths.length; i++) {
         const prev = sortedMonths[i - 1];
@@ -265,117 +257,207 @@ function getLast4MonthsData(dataSnapshot, unitPrice = 2000) {
             result.push({
                 label: prev.label,
                 energy: parseFloat(usage.toFixed(2)),
-                cost: parseFloat((usage * unitPrice).toFixed(0)) // tiền điện làm tròn nguyên
+                cost: Math.round(usage * unitPrice) // làm tròn tiền
             });
         }
     }
 
-    // Bước 5: Lấy 4 tháng gần nhất
-    const last4 = result.slice(-4);
+    // Lấy 8 tháng gần nhất
+    const last8 = result.slice(-8);
 
-    // Bù thiếu nếu chưa đủ 4 tháng
-    while (last4.length < 4) {
-        const prevLabel = last4.length > 0 ? last4[0].label : "--/----";
-        last4.unshift({ label: prevLabel, energy: 0, cost: 0 });
+    // Bù thiếu nếu chưa đủ 8 tháng
+    while (last8.length < 8) {
+        const prevLabel = last8.length > 0 ? last8[0].label : "--/----";
+        last8.unshift({ label: prevLabel, energy: 0, cost: 0 });
     }
 
-    // Bước 6: Tách thành 3 mảng riêng
-    const months = last4.map(item => item.label);
-    const energy = last4.map(item => item.energy);
-    const cost = last4.map(item => item.cost);
+    const months = last8.map(item => item.label);
+    const energy = last8.map(item => item.energy);
+    const cost = last8.map(item => item.cost);
 
     return { months, energy, cost };
 }
 
 let months = [];
-let chartData1 = {
-    energy: [],
-    cost: []
-};
-let chartData2 = {
-    energy: [],
-    cost: []
-};
-let loadedCount = 0; // Đếm xem đã load xong bao nhiêu phòng
+let chartData1 = { energy: [], cost: [] }; // B00
+let chartData2 = { energy: [], cost: [] }; // B01
+let loadedCount = 0;
 
-function initCharts() {
-    // Chỉ vẽ chart khi cả hai phòng đều đã load dữ liệu
+let powerChart, costChart; // Gộp
+let powerB01Chart, costB01Chart; // Tách riêng B01
+
+function updateCharts() {
     if (loadedCount < 2) return;
 
-    // Hủy chart cũ nếu đã tồn tại (tránh lỗi overlap)
-    if (window.powerChartInstance) window.powerChartInstance.destroy();
-    if (window.costChartInstance) window.costChartInstance.destroy();
+    const isSeparate = document.getElementById('separateChartsToggle').checked;
 
-    // Biểu đồ điện năng (bar)
+    // Cập nhật tiêu đề
+    document.getElementById('powerTitle').textContent = isSeparate ? "Phòng B00 - Điện năng" : "So sánh Điện năng";
+    document.getElementById('costTitle').textContent = isSeparate ? "Phòng B00 - Chi phí" : "So sánh Chi phí";
+
+    document.getElementById('powerChartB01Container').style.display = isSeparate ? 'block' : 'none';
+    document.getElementById('costChartB01Container').style.display = isSeparate ? 'block' : 'none';
+
+    // === BIỂU ĐỒ ĐIỆN NĂNG (BAR) - MÀU XANH DƯƠNG → TÍM ĐẸP ===
+    if (powerChart) powerChart.destroy();
     const powerCtx = document.getElementById('powerChart').getContext('2d');
-    window.powerChartInstance = new Chart(powerCtx, {
+    powerChart = new Chart(powerCtx, {
         type: 'bar',
         data: {
             labels: months,
-            datasets: [
-                { label: 'Phòng B00', data: chartData1.energy, backgroundColor: 'rgba(44,62,80,0.85)', borderRadius: 8 },
-                { label: 'Phòng B01', data: chartData2.energy, backgroundColor: 'rgba(120,144,156,0.85)', borderRadius: 8 }
-            ]
+            datasets: isSeparate ? 
+                [{
+                    label: 'Điện năng (kWh)',
+                    data: chartData1.energy,
+                    backgroundColor: 'rgba(99, 102, 241, 0.8)',  // Indigo
+                    borderColor: '#6366f1',
+                    borderWidth: 2,
+                    borderRadius: 10,
+                    borderSkipped: false,
+                }] :
+                [
+                    {
+                        label: 'Phòng B00',
+                        data: chartData1.energy,
+                        backgroundColor: 'rgba(99, 102, 241, 0.8)',  // Indigo
+                        borderColor: '#6366f1',
+                        borderWidth: 2,
+                        borderRadius: 10,
+                    },
+                    {
+                        label: 'Phòng B01',
+                        data: chartData2.energy,
+                        backgroundColor: 'rgba(168, 85, 247, 0.8)',   // Purple
+                        borderColor: '#a855f7',
+                        borderWidth: 2,
+                        borderRadius: 10,
+                    }
+                ]
         },
         options: {
             responsive: true,
-            plugins: { legend: { position: 'top' } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'Điện năng (kWh)' } } }
-        }
-    });
-
-    // Biểu đồ chi phí (line)
-    const costCtx = document.getElementById('costChart').getContext('2d');
-    window.costChartInstance = new Chart(costCtx, {
-        type: 'line',
-        data: {
-            labels: months,
-            datasets: [
-                { label: 'Phòng B00', data: chartData1.cost, borderColor: '#2c3e50', backgroundColor: 'rgba(44,62,80,0.1)', tension: 0.4 },
-                { label: 'Phòng B01', data: chartData2.cost, borderColor: '#78909c', backgroundColor: 'rgba(120,144,156,0.1)', tension: 0.4 }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: { legend: { position: 'top' } },
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 14 } } },
+                tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', titleColor: '#fff', bodyColor: '#fff' }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
-                    title: { display: true, text: 'Chi phí (VNĐ)' },
-                    ticks: { callback: v => v.toLocaleString('vi-VN') }
-                }
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: { color: '#666' }
+                },
+                x: { grid: { display: false }, ticks: { maxRotation: 45, color: '#666' } }
             }
         }
     });
+
+    // === BIỂU ĐỒ CHI PHÍ (LINE) - MÀU CAM → ĐỎ MÊ LY ===
+    if (costChart) costChart.destroy();
+    const costCtx = document.getElementById('costChart').getContext('2d');
+    costChart = new Chart(costCtx, {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: isSeparate ? 
+                [{
+                    label: 'Chi phí (VNĐ)',
+                    data: chartData1.cost,
+                    borderColor: '#f97316',              // Cam sáng
+                    backgroundColor: 'rgba(249, 115, 22, 0.15)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#f97316',
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                }] :
+                [
+                    {
+                        label: 'Phòng B00',
+                        data: chartData1.cost,
+                        borderColor: '#f97316',              // Cam sáng
+                        backgroundColor: 'rgba(249, 115, 22, 0.15)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#f97316',
+                        pointRadius: 5,
+                    },
+                    {
+                        label: 'Phòng B01',
+                        data: chartData2.cost,
+                        borderColor: '#ef4444',              // Đỏ tươi
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        tension: 0.4,
+                        fill: true,
+                        pointBackgroundColor: '#ef4444',
+                        pointRadius: 5,
+                    }
+                ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'top', labels: { font: { size: 14 } } },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('vi-VN')} VNĐ` }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    ticks: { 
+                        color: '#666',
+                        callback: v => v.toLocaleString('vi-VN')
+                    }
+                },
+                x: { grid: { display: false }, ticks: { maxRotation: 45, color: '#666' } }
+            }
+        }
+    });
+
+    // Biểu đồ B01 khi tách (màu giống B01 gộp)
+    if (isSeparate) {
+        if (powerB01Chart) powerB01Chart.destroy();
+        powerB01Chart = new Chart(document.getElementById('powerChartB01').getContext('2d'), {
+            type: 'bar',
+            data: { labels: months, datasets: [{ label: 'Điện năng (kWh)', data: chartData2.energy, backgroundColor: 'rgba(168, 85, 247, 0.8)', borderColor: '#a855f7', borderWidth: 2, borderRadius: 10 }] },
+            options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+        });
+
+        if (costB01Chart) costB01Chart.destroy();
+        costB01Chart = new Chart(document.getElementById('costChartB01').getContext('2d'), {
+            type: 'line',
+            data: { labels: months, datasets: [{ label: 'Chi phí (VNĐ)', data: chartData2.cost, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.15)', fill: true, tension: 0.4, pointBackgroundColor: '#ef4444', pointRadius: 5 }] },
+            options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('vi-VN') } } } }
+        });
+    }
 }
 
-// Listener cho phòng B00
-onValue(ref(db, "C000001/Data"), snapshot => {
+// Switch event
+document.getElementById('separateChartsToggle').addEventListener('change', updateCharts);
+
+// Listener B00 và B01
+onValue(ref(db, "C000001/Data"), (snapshot) => {
     if (!snapshot.exists()) return;
-    const data = snapshot.val();
-    const result = getLast4MonthsData(data, electricityPrice);
-    
-    months = result.months || [];           // Lưu months từ phòng B00 (hoặc chọn nguồn chuẩn)
+    const result = getLast8MonthsData(snapshot.val(), electricityPrice);
     chartData1.energy = result.energy || [];
     chartData1.cost = result.cost || [];
-    
-    loadedCount = Math.max(loadedCount, 1); // Đảm bảo ít nhất là 1
-    initCharts();
+    if (loadedCount === 0) months = result.months || [];
+    loadedCount = Math.max(loadedCount, 1);
+    updateCharts();
 });
 
-// Listener cho phòng B01
-onValue(ref(db, "C000002/Data"), snapshot => {
+onValue(ref(db, "C000002/Data"), (snapshot) => {
     if (!snapshot.exists()) return;
-    const data = snapshot.val();
-    const result = getLast4MonthsData(data, electricityPrice);
-    
-    // QUAN TRỌNG: Không ghi đè months ở đây!
-    // months đã được lấy từ phòng B00 → giữ nguyên để đồng bộ
+    const result = getLast8MonthsData(snapshot.val(), electricityPrice);
     chartData2.energy = result.energy || [];
     chartData2.cost = result.cost || [];
-    
-    loadedCount = 2; // Đánh dấu phòng thứ 2 đã load xong
-    initCharts();
+    if (loadedCount === 0) months = result.months || [];
+    loadedCount = 2;
+    updateCharts();
 });
 
 // ==================== MODALS ====================
