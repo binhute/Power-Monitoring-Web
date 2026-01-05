@@ -298,7 +298,7 @@ function updateCharts() {
     document.getElementById('powerChartB01Container').style.display = isSeparate ? 'block' : 'none';
     document.getElementById('costChartB01Container').style.display = isSeparate ? 'block' : 'none';
 
-    // === BIỂU ĐỒ ĐIỆN NĂNG (BAR) - MÀU XANH DƯƠNG → TÍM ĐẸP ===
+    // === BIỂU ĐỒ ĐIỆN NĂNG (BAR)
     if (powerChart) powerChart.destroy();
     const powerCtx = document.getElementById('powerChart').getContext('2d');
     powerChart = new Chart(powerCtx, {
@@ -351,7 +351,7 @@ function updateCharts() {
         }
     });
 
-    // === BIỂU ĐỒ CHI PHÍ (LINE) - MÀU CAM → ĐỎ MÊ LY ===
+    // === BIỂU ĐỒ CHI PHÍ (LINE) 
     if (costChart) costChart.destroy();
     const costCtx = document.getElementById('costChart').getContext('2d');
     costChart = new Chart(costCtx, {
