@@ -257,7 +257,7 @@ function getLast8MonthsData(dataSnapshot, unitPrice = 2000) {
             result.push({
                 label: prev.label,
                 energy: parseFloat(usage.toFixed(2)),
-                cost: Math.round(usage * unitPrice) // làm tròn tiền
+                cost: Math.round(usage * unitPrice) 
             });
         }
     }
