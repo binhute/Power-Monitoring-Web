@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getDatabase,
+  update,
   ref,
   query,
   orderByKey,
@@ -173,34 +174,42 @@ function updateDashboard() {
 }
 
 // ==================== TRẠNG THÁI CẢNH BÁO ====================
-function updateAlerts() {
-    const warn1 = roomData.room101.Warn1 ?? 0;
-    const energy1 = roomData.room101.Energy1 ?? 0;
-    const threshold1 = roomData.room101.Threshold1 ?? settings.room1PowerThreshold;
+onValue(ref(db, 'C000001/Threshold1'), snap => {
+    threshold1 = Number(snap.val() ?? 0);
+});
 
-    const warn2 = roomData.room102.Warn2 ?? 0;
-    const energy2 = roomData.room102.Energy2 ?? 0;
-    const threshold2 = roomData.room102.Threshold2 ?? settings.room2PowerThreshold;
+onValue(ref(db, 'C000002/Threshold2'), snap => {
+    threshold2 = Number(snap.val() ?? 0);
+});
+
+function updateAlerts() {
+    const warn1 = roomData.room101?.Warn1 ?? 0;
+    const energy1 = roomData.room101?.Energy1 ?? 0;
+
+    const warn2 = roomData.room102?.Warn2 ?? 0;
+    const energy2 = roomData.room102?.Energy2 ?? 0;
 
     const r1Alert = document.getElementById('room1Alert');
-    const r1Msg = document.getElementById('room1AlertMsg');
+    const r1Msg   = document.getElementById('room1AlertMsg');
     const r2Alert = document.getElementById('room2Alert');
-    const r2Msg = document.getElementById('room2AlertMsg');
+    const r2Msg   = document.getElementById('room2AlertMsg');
 
+    // ===== ROOM 1 =====
     if (warn1 === 1 || energy1 > threshold1) {
         r1Alert.className = 'param-card alert-card';
         r1Alert.querySelector('.param-icon').textContent = '⚠️';
-        r1Msg.textContent = `Vượt ngưỡng ${(threshold1).toFixed(1)} kWh`;
+        r1Msg.textContent = `Vượt ngưỡng ${threshold1.toFixed(1)} kWh`;
     } else {
         r1Alert.className = 'param-card alert-card success';
         r1Alert.querySelector('.param-icon').textContent = '✅';
         r1Msg.textContent = 'Bình thường';
     }
 
+    // ===== ROOM 2 =====
     if (warn2 === 1 || energy2 > threshold2) {
         r2Alert.className = 'param-card alert-card';
         r2Alert.querySelector('.param-icon').textContent = '⚠️';
-        r2Msg.textContent = `Vượt ngưỡng ${(threshold2).toFixed(1)} kWh`;
+        r2Msg.textContent = `Vượt ngưỡng ${threshold2.toFixed(1)} kWh`;
     } else {
         r2Alert.className = 'param-card alert-card success';
         r2Alert.querySelector('.param-icon').textContent = '✅';
@@ -511,6 +520,11 @@ function saveSettings() {
     const r2 = parseFloat(document.getElementById('room2PowerThreshold').value);
     const price = parseFloat(document.getElementById('electricityPrice').value);
 
+    if (isNaN(r1) || isNaN(r2) || isNaN(price)) {
+        alert("❌ Giá trị nhập không hợp lệ");
+        return;
+    }
+
     settings.electricityPrice = price;
     settings.room1PowerThreshold = r1;
     settings.room2PowerThreshold = r2;
@@ -521,12 +535,20 @@ function saveSettings() {
     document.getElementById('room2CostThreshold').value = settings.room2CostThreshold;
 
     localStorage.setItem('roomMonitorSettings', JSON.stringify(settings));
-    database.ref('C000001').update({ Threshold1: r1 });
-    database.ref('C000002').update({ Threshold2: r2 });
-    database.ref().update({UnitPrice: price});
 
-    alert('✅ Đã lưu & đồng bộ Firebase!');
-    updateAlerts();
+    update(ref(db), {
+        "C000001/Threshold1": r1,
+        "C000002/Threshold2": r2,
+        "UnitPrice": price
+    })
+    .then(() => {
+        alert('✅ Đã lưu & đồng bộ Firebase!');
+        updateAlerts();
+    })
+    .catch((err) => {
+        console.error(err);
+        alert("❌ Lỗi Firebase: " + err.message);
+    });
 }
 
 function loadSettings() {
